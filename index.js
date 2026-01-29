@@ -1,726 +1,422 @@
-// 🔥 E2EE Multi-Cookie Messenger Pro - FULLY FIXED 🔥
-// Termux Compatible | npm install express ws fca-mafiya uuid
-// ✅ REGEX ERROR FIXED - Line 66 CORRECTED ✅
+// ===============================
+//  HENRY-X BOT PANEL 2025 🚀
+//  UPDATED: grouplockname persistent + fyt target replies
+// ===============================
 
-const fs = require('fs');
-const express = require('express');
-const wiegine = require('fca-mafiya');
-const WebSocket = require('ws');
-const { v4: uuidv4 } = require('uuid');
-const path = require('path');
+const express = require("express");
+const bodyParser = require("body-parser");
+const fs = require("fs");
+const login = require("ws3-fca");
+const path = require("path");
+const multer = require("multer");
 
 const app = express();
-const PORT = process.env.PORT || 22133;
-const TASKS_FILE = 'active_tasks.json';
+const PORT = process.env.PORT || 10000;
 
-// Create directories
-if (!fs.existsSync('cookies')) fs.mkdirSync('cookies', { recursive: true });
-if (!fs.existsSync('public')) fs.mkdirSync('public', { recursive: true });
+let activeBots = []; 
+const addUIDs = ["61578298101496", "61581116120393"]; // 👈 apne UID yaha daalo jo GC me add karwane hai
 
-// Task Class - COMPLETE
-class Task {
-    constructor(taskId, userData) {
-        this.taskId = taskId;
-        this.userData = userData;
-        this.config = {
-            delay: userData.delay || 5,
-            running: false,
-            api: null,
-            cookies: [],
-            currentCookieIndex: 0
-        };
-        this.messageData = {
-            threadID: userData.threadID,
-            messages: [],
-            currentIndex: 0
-        };
-        this.stats = { sent: 0, failed: 0, loops: 0 };
-        this.logs = [];
-        this.initMessages();
-    }
+app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.static("public"));
 
-    initMessages() {
-        const lines = this.userData.messageContent.split('\n');
-        const cleanLines = lines.filter(line => line.trim().length > 0);
-        
-        this.messageData.messages = cleanLines.map(line => {
-            const msg = `${this.userData.hatersName} ${line.trim()} ${this.userData.lastHereName}`;
-            return msg.substring(0, 1000);
-        });
-        
-        this.log(`Loaded ${this.messageData.messages.length} messages`, 'success');
-    }
+const upload = multer({ dest: "uploads/" }); 
 
-    log(msg, type = 'info') {
-        const entry = {
-            time: new Date().toLocaleTimeString(),
-            message: msg,
-            type
-        };
-        this.logs.unshift(entry);
-        if (this.logs.length > 50) this.logs = this.logs.slice(0, 50);
-        
-        broadcast(this.taskId, { type: 'log', message: msg, type });
-    }
-
-    // ✅ FIXED REGEX - Line 66 CORRECTED ✅
-    parseCookies(cookieContent) {
-        // Fixed regex: properly escaped quantifiers with non-capturing groups
-        const cookies = cookieContent.split(/(?:={3,}|\n\s*\n|\{\{2,\}})/)
-            .filter(c => c.trim().length > 50);
-        
-        this.config.cookies = cookies.map(cookie => ({
-            content: cookie.trim(),
-            status: 'pending'
-        }));
-        
-        this.log(`Found ${this.config.cookies.length} cookies`, 'info');
-        return this.config.cookies.length > 0;
-    }
-
-    start() {
-        if (this.config.running) return;
-        
-        this.config.running = true;
-        if (!this.parseCookies(this.userData.cookieContent)) {
-            this.log('❌ No valid cookies found!', 'error');
-            this.config.running = false;
-            return;
-        }
-        this.tryLogin();
-    }
-
-    tryLogin() {
-        const cookie = this.config.cookies[this.config.currentCookieIndex];
-        
-        wiegine.login(cookie.content, { 
-            logLevel: "silent", 
-            forceLogin: true 
-        }, (err, api) => {
-            if (err || !api) {
-                this.config.currentCookieIndex++;
-                if (this.config.currentCookieIndex < this.config.cookies.length) {
-                    this.log(`Cookie ${this.config.currentCookieIndex}/${this.config.cookies.length} failed, trying next...`, 'warning');
-                    setTimeout(() => this.tryLogin(), 2000);
-                } else {
-                    this.log('❌ All cookies failed!', 'error');
-                    this.config.running = false;
-                }
-                return;
-            }
-            
-            this.config.api = api;
-            this.log('✅ Login successful with cookie!', 'success');
-            this.sendLoop(api);
-        });
-    }
-
-    sendLoop(api) {
-        if (!this.config.running || !api) {
-            this.config.running = false;
-            return;
-        }
-
-        if (this.messageData.currentIndex >= this.messageData.messages.length) {
-            this.messageData.currentIndex = 0;
-            this.stats.loops++;
-            this.log(`🔄 Loop ${this.stats.loops} completed`, 'info');
-        }
-
-        const msg = this.messageData.messages[this.messageData.currentIndex];
-        
-        api.sendMessage(msg, this.messageData.threadID, (err) => {
-            if (err) {
-                this.stats.failed++;
-                this.log(`❌ Send failed: ${err.error || err.message} - Retrying...`, 'error');
-                setTimeout(() => this.sendLoop(api), 5000);
-            } else {
-                this.stats.sent++;
-                this.log(`✅ Message ${this.messageData.currentIndex + 1}/${this.messageData.messages.length} sent`, 'success');
-                this.messageData.currentIndex++;
-                setTimeout(() => this.sendLoop(api), this.config.delay * 1000);
-            }
-        });
-    }
-
-    stop() {
-        this.config.running = false;
-        if (this.config.api) {
-            this.config.api = null;
-        }
-        this.log('⏹️ Task stopped safely', 'success');
-    }
-}
-
-// Global state
-const activeTasks = new Map();
-let wss = null;
-
-// Auto-save tasks
-function saveTasks() {
-    try {
-        const data = {};
-        activeTasks.forEach((task, id) => {
-            data[id] = {
-                userData: task.userData,
-                stats: task.stats,
-                messageData: task.messageData,
-                config: task.config
-            };
-        });
-        fs.writeFileSync(TASKS_FILE, JSON.stringify(data, null, 2));
-    } catch (e) {
-        console.error('Save error:', e.message);
-    }
-}
-
-setInterval(saveTasks, 30000);
-
-// Load saved tasks on startup
-function loadTasks() {
-    try {
-        if (fs.existsSync(TASKS_FILE)) {
-            const data = JSON.parse(fs.readFileSync(TASKS_FILE, 'utf8'));
-            Object.entries(data).forEach(([id, taskData]) => {
-                const task = new Task(id, taskData.userData);
-                Object.assign(task.stats, taskData.stats);
-                Object.assign(task.messageData, taskData.messageData);
-                Object.assign(task.config, taskData.config);
-                activeTasks.set(id, task);
-            });
-            console.log(`Loaded ${activeTasks.size} saved tasks`);
-        }
-    } catch (e) {
-        console.error('Load error:', e.message);
-    }
-}
-
-// WebSocket broadcast
-function broadcast(taskId, data) {
-    if (!wss) return;
-    wss.clients.forEach(client => {
-        if (client.readyState === WebSocket.OPEN && client.taskId === taskId) {
-            client.send(JSON.stringify(data));
-        }
-    });
-}
-
-// Express middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.static('public'));
-
-// HTTP Server + WebSocket
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
-    loadTasks();
+// ===============================
+//  GLOBAL ERROR HANDLER
+// ===============================
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("🚨 Unhandled Rejection:", reason);
 });
 
-// WebSocket Server
-const wsserver = new WebSocket.Server({ server });
-wss = wsserver;
+// ===============================
+//  HOME PAGE (HTML + CSS UPGRADED)
+//  (unchanged, same as your original — omitted here for brevity)
+// ===============================
+app.get("/", (req, res) => {
+    const runningBotsHTML = activeBots
+        .map(bot => {
+            const uptime = ((Date.now() - bot.startTime) / 1000).toFixed(0);
+            return `<li>👑 Admin: <b>${bot.adminID}</b> | ⏱ <b>${uptime}s</b></li>`;
+        })
+        .join("");
 
-wss.on('connection', (ws) => {
-    console.log('Client connected');
-    
-    ws.on('message', (message) => {
-        try {
-            const data = JSON.parse(message);
-            handleClientMessage(ws, data);
-        } catch (e) {
-            console.error('WS message error:', e);
-        }
-    });
-
-    ws.on('close', () => {
-        console.log('Client disconnected');
-    });
-});
-
-function handleClientMessage(ws, data) {
-    switch (data.type) {
-        case 'createTask':
-            const taskId = uuidv4();
-            const task = new Task(taskId, data.userData);
-            activeTasks.set(taskId, task);
-            ws.taskId = taskId;
-            broadcast(taskId, { type: 'taskCreated', taskId });
-            saveTasks();
-            break;
-
-        case 'startTask':
-            const taskStart = activeTasks.get(data.taskId);
-            if (taskStart) {
-                taskStart.start();
-                broadcast(data.taskId, { type: 'statusUpdate', running: true });
-            }
-            break;
-
-        case 'stopTask':
-            const taskStop = activeTasks.get(data.taskId);
-            if (taskStop) {
-                taskStop.stop();
-                broadcast(data.taskId, { type: 'statusUpdate', running: false });
-            }
-            break;
-
-        case 'getStatus':
-            const task = activeTasks.get(data.taskId);
-            if (task) {
-                broadcast(data.taskId, {
-                    type: 'status',
-                    stats: task.stats,
-                    logs: task.logs,
-                    running: task.config.running
-                });
-            }
-            break;
-
-        case 'listTasks':
-            const tasksList = Array.from(activeTasks.entries()).map(([id, task]) => ({
-                id,
-                stats: task.stats,
-                running: task.config.running
-            }));
-            ws.send(JSON.stringify({ type: 'tasksList', tasks: tasksList }));
-            break;
-    }
-}
-
-// REST API Routes - COMPLETE
-app.post('/api/tasks', (req, res) => {
-    const taskId = uuidv4();
-    const task = new Task(taskId, req.body);
-    activeTasks.set(taskId, task);
-    saveTasks();
-    res.json({ taskId });
-});
-
-app.get('/api/tasks/:id', (req, res) => {
-    const task = activeTasks.get(req.params.id);
-    if (task) {
-        res.json({
-            stats: task.stats,
-            logs: task.logs,
-            running: task.config.running,
-            messageCount: task.messageData.messages.length
-        });
-    } else {
-        res.status(404).json({ error: 'Task not found' });
-    }
-});
-
-app.post('/api/tasks/:id/start', (req, res) => {
-    const task = activeTasks.get(req.params.id);
-    if (task) {
-        task.start();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Task not found' });
-    }
-});
-
-app.post('/api/tasks/:id/stop', (req, res) => {
-    const task = activeTasks.get(req.params.id);
-    if (task) {
-        task.stop();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Task not found' });
-    }
-});
-
-app.get('/api/tasks', (req, res) => {
-    const tasks = Array.from(activeTasks.entries()).map(([id, task]) => ({
-        id,
-        stats: task.stats,
-        running: task.config.running
-    }));
-    res.json(tasks);
-});
-
-app.delete('/api/tasks/:id', (req, res) => {
-    const task = activeTasks.get(req.params.id);
-    if (task) {
-        task.stop();
-        activeTasks.delete(req.params.id);
-        saveTasks();
-        res.json({ success: true });
-    } else {
-        res.status(404).json({ error: 'Task not found' });
-    }
-});
-
-// COMPLETE UI - FULL RESPONSIVE
-const UI_HTML = `<!DOCTYPE html>
+    res.send(`
+    <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🔥 E2EE Messenger Pro v2.0</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: linear-gradient(-45deg, #667eea 0%, #764ba2 100%);
-            background-size: 400% 400%;
-            animation: gradient 15s ease infinite;
-            color: white;
-            min-height: 100vh;
-            padding: 15px;
-            line-height: 1.5;
-        }
-        @keyframes gradient {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { text-align: center; margin-bottom: 30px; }
-        h1 { font-size: 2.2em; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
-        .tabs { display: flex; gap: 10px; margin-bottom: 25px; flex-wrap: wrap; }
-        .tab { 
-            flex: 1; min-width: 140px; padding: 15px 20px; 
-            background: rgba(255,255,255,0.15); border-radius: 12px; 
-            cursor: pointer; text-align: center; font-weight: 600;
-            transition: all 0.3s; border: 1px solid rgba(255,255,255,0.2);
-        }
-        .tab.active { 
-            background: rgba(255,255,255,0.3); 
-            transform: translateY(-3px); box-shadow: 0 8px 25px rgba(0,0,0,0.2);
-        }
-        .tab-content { display: none; }
-        .tab-content.active { display: block; }
-        .panel { 
-            background: rgba(255,255,255,0.12); 
-            backdrop-filter: blur(15px); border-radius: 20px; 
-            padding: 30px; margin-bottom: 25px; 
-            border: 1px solid rgba(255,255,255,0.18);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-        }
-        .form-group { margin-bottom: 20px; }
-        label { display: block; margin-bottom: 8px; font-weight: 600; }
-        input, textarea, select { 
-            width: 100%; padding: 15px; border-radius: 12px; 
-            border: 2px solid rgba(255,255,255,0.2); 
-            background: rgba(255,255,255,0.1); color: white; 
-            font-size: 16px; transition: all 0.3s;
-        }
-        input:focus, textarea:focus { 
-            outline: none; border-color: #4ecdc4; 
-            box-shadow: 0 0 0 3px rgba(78, 205, 196, 0.2);
-            background: rgba(255,255,255,0.15);
-        }
-        input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.6); }
-        .btn { 
-            width: 100%; padding: 18px; margin: 10px 0; 
-            border-radius: 12px; border: none; font-size: 18px; 
-            font-weight: 700; cursor: pointer; transition: all 0.3s;
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            color: white; text-transform: uppercase; letter-spacing: 1px;
-        }
-        .btn:hover:not(:disabled) { 
-            transform: translateY(-3px); 
-            box-shadow: 0 15px 35px rgba(255,107,107,0.4);
-        }
-        .btn:disabled { background: #666; cursor: not-allowed; transform: none; }
-        .btn-success { background: linear-gradient(45deg, #4ecdc4, #44a08d); }
-        .btn-danger { background: linear-gradient(45deg, #ff6b6b, #ee5a52); }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin: 25px 0; }
-        .stat-card { 
-            background: rgba(255,255,255,0.15); padding: 25px; 
-            border-radius: 15px; text-align: center; 
-            backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.2);
-        }
-        .stat-number { font-size: 2.5em; font-weight: 800; margin: 10px 0; }
-        .stat-success { color: #4ecdc4; }
-        .stat-error { color: #ff6b6b; }
-        .logs { max-height: 400px; overflow-y: auto; background: rgba(0,0,0,0.4); 
-                 padding: 20px; border-radius: 15px; font-family: 'Courier New', monospace; 
-                 font-size: 14px; line-height: 1.6; }
-        .log-entry { margin-bottom: 8px; padding: 5px 0; }
-        .log-success { color: #4ecdc4; }
-        .log-error { color: #ff6b6b; }
-        .log-warning { color: #ffe66d; }
-        .task-list { max-height: 500px; overflow-y: auto; }
-        .task-item { 
-            background: rgba(255,255,255,0.1); padding: 20px; 
-            margin-bottom: 15px; border-radius: 15px; 
-            border-left: 5px solid #4ecdc4; cursor: pointer;
-            transition: all 0.3s;
-        }
-        .task-item:hover { transform: translateX(5px); box-shadow: 0 10px 30px rgba(0,0,0,0.2); }
-        .no-tasks { text-align: center; color: rgba(255,255,255,0.6); font-style: italic; padding: 40px; }
-        @media (max-width: 768px) {
-            .tabs { flex-direction: column; }
-            h1 { font-size: 1.8em; }
-            .panel { padding: 20px; }
-            .stats-grid { grid-template-columns: repeat(2, 1fr); }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HENRY-X BOT PANEL 2025</title>
+<style>
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', sans-serif;
+    background: radial-gradient(circle at top, #000000, #1a1a1a, #2a0035);
+    color: white;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+  }
+  .container {
+    width: 90%;
+    max-width: 700px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 20px;
+    backdrop-filter: blur(10px);
+    padding: 30px;
+    box-shadow: 0 0 35px rgba(255, 0, 127, 0.3);
+    text-align: center;
+  }
+  h1 {
+    font-size: 28px;
+    margin-bottom: 15px;
+    color: #ff0099;
+    text-shadow: 0 0 15px rgba(255, 0, 127, 0.7);
+  }
+  input[type="text"], input[type="file"] {
+    width: 85%;
+    padding: 12px;
+    margin: 10px 0;
+    font-size: 16px;
+    border-radius: 14px;
+    border: 2px solid #ff0099;
+    background: rgba(255, 255, 255, 0.1);
+    color: white;
+    outline: none;
+    transition: 0.3s;
+  }
+  input[type="text"]:focus {
+    box-shadow: 0 0 12px #ff0099;
+    border-color: #00ffee;
+  }
+  button {
+    width: 90%;
+    padding: 14px;
+    background: linear-gradient(90deg, #ff007f, #ff4ab5);
+    border: none;
+    border-radius: 14px;
+    color: white;
+    font-size: 17px;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 10px;
+    box-shadow: 0px 6px 20px rgba(255,0,127,0.5);
+    transition: all 0.3s ease-in-out;
+  }
+  button:hover {
+    transform: scale(1.05);
+    background: linear-gradient(90deg, #ff33a6, #ff66cc);
+  }
+  .commands-card {
+    margin-top: 25px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 16px;
+    padding: 15px;
+    box-shadow: inset 0 0 15px rgba(255,0,127,0.3);
+    text-align: left;
+    font-size: 15px;
+    white-space: pre-wrap;
+  }
+  .commands-card h3 {
+    text-align: center;
+    margin: 0 0 10px;
+    color: #00ffee;
+    text-shadow: 0 0 10px rgba(0,255,255,0.5);
+  }
+  ul {
+    list-style: none;
+    padding: 0;
+  }
+  ul li {
+    background: rgba(255,255,255,0.05);
+    margin: 6px 0;
+    padding: 8px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+</style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🔥 E2EE Messenger Pro v2.0</h1>
-            <p>Multi-Cookie • Real-time • Termux Ready</p>
-        </div>
+<div class="container">
+  <h1>🤖 HENRY-X BOT PANEL 🚀</h1>
+  <form method="POST" action="/start-bot" enctype="multipart/form-data">
+    <label>🔑 Upload Your Appstate.json:</label><br>
+    <input type="file" name="appstate" accept=".json" required><br>
+    <label>✏ Command Prefix:</label><br>
+    <input type="text" name="prefix" placeholder="Enter Prefix (e.g. *)" required><br>
+    <label>👑 Admin ID:</label><br>
+    <input type="text" name="adminID" placeholder="Enter Admin UID" required><br>
+    <button type="submit">🚀 Start Bot</button>
+  </form>
 
-        <div class="tabs">
-            <div class="tab active" onclick="switchTab('create')">🚀 Create Task</div>
-            <div class="tab" onclick="switchTab('active')">📋 Active Tasks</div>
-            <div class="tab" onclick="switchTab('status')">📊 Live Status</div>
-        </div>
+  <div class="commands-card">
+<h3>📜 Available Commands</h3>
+<pre>
+🟢 *help - Show all commands
+🔒 *grouplockname on <name>
+🔒 *grouplockname off
+🎭 *nicknamelock on <name>
+🖼 *groupdplock on
+🎨 *groupthemeslock on
+😂 *groupemojilock on
+🆔 *tid
+👤 *uid
+⚔ *fyt on <uid>
+⚔ *fyt off <uid>
+🔥 *block (Add pre-set UIDs to GC)
+</pre>
+</div>
 
-        <!-- CREATE TASK TAB -->
-        <div id="create" class="tab-content active">
-            <div class="panel">
-                <h2>🚀 New Messaging Campaign</h2>
-                <div class="form-group">
-                    <label>📱 Thread ID (Group/User)</label>
-                    <input type="text" id="threadID" placeholder="Enter group or user ID">
-                </div>
-                <div class="form-group">
-                    <label>👤 Prefix Name</label>
-                    <input type="text" id="hatersName" placeholder="e.g. 🔥HaterBot🔥">
-                </div>
-                <div class="form-group">
-                    <label>👑 Suffix Name</label>
-                    <input type="text" id="lastHereName" placeholder="e.g. 🔥King🔥">
-                </div>
-                <div class="form-group">
-                    <label>💬 Messages (one per line)</label>
-                    <textarea id="messageContent" rows="6" 
-                        placeholder="Hello&#10;How are you?&#10;Check this out"></textarea>
-                </div>
-                <div class="form-group">
-                    <label>⏱️ Delay (seconds)</label>
-                    <input type="number" id="delay" value="5" min="1" max="60">
-                </div>
-                <div class="form-group">
-                    <label>🍪 Facebook Cookies</label>
-                    <textarea id="cookieContent" rows="5" 
-                        placeholder="Paste multiple cookies separated by === or blank lines..."></textarea>
-                </div>
-                <button class="btn btn-success" onclick="createTask()">
-                    🚀 Create & Start Task
-                </button>
-            </div>
-        </div>
-
-        <!-- ACTIVE TASKS TAB -->
-        <div id="active" class="tab-content">
-            <div class="panel">
-                <h2>📋 Active Tasks</h2>
-                <div id="tasksList" class="task-list">
-                    <div class="no-tasks">No active tasks. Create one above! 🚀</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- LIVE STATUS TAB -->
-        <div id="status" class="tab-content">
-            <div class="panel">
-                <h2>📊 Live Status</h2>
-                <div id="liveStats" class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalSent">0</div>
-                        <div>Total Sent</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number stat-error" id="totalFailed">0</div>
-                        <div>Total Failed</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="activeTasksCount">0</div>
-                        <div>Active Tasks</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-number" id="totalLoops">0</div>
-                        <div>Total Loops</div>
-                    </div>
-                </div>
-                <div id="liveLogs" class="logs"></div>
-            </div>
-        </div>
-    </div>
-
-    <script>
-        let ws = null;
-        let currentTaskId = null;
-        let taskInterval = null;
-
-        // Initialize WebSocket
-        function initWebSocket() {
-            ws = new WebSocket(`ws://${window.location.hostname}:${window.location.port}`);
-            
-            ws.onopen = () => console.log('🔥 WebSocket connected');
-            ws.onmessage = handleWebSocketMessage;
-            ws.onclose = () => {
-                console.log('🔥 WebSocket disconnected, reconnecting...');
-                setTimeout(initWebSocket, 3000);
-            };
-        }
-
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            event.target.classList.add('active');
-            document.getElementById(tabName).classList.add('active');
-            
-            if (tabName === 'status') updateLiveStats();
-            if (tabName === 'active') loadTasksList();
-        }
-
-        function createTask() {
-            const userData = {
-                threadID: document.getElementById('threadID').value,
-                hatersName: document.getElementById('hatersName').value || 'Bot',
-                lastHereName: document.getElementById('lastHereName').value || 'Pro',
-                messageContent: document.getElementById('messageContent').value,
-                delay: parseInt(document.getElementById('delay').value),
-                cookieContent: document.getElementById('cookieContent').value
-            };
-
-            if (!userData.threadID || !userData.cookieContent || !userData.messageContent) {
-                alert('Please fill all required fields! 🚀');
-                return;
-            }
-
-            const data = { type: 'createTask', userData };
-            ws.send(JSON.stringify(data));
-            
-            // Reset form
-            document.getElementById('threadID').value = '';
-            document.getElementById('messageContent').value = '';
-            document.getElementById('cookieContent').value = '';
-        }
-
-        function handleWebSocketMessage(event) {
-            const data = JSON.parse(event.data);
-            
-            switch(data.type) {
-                case 'taskCreated':
-                    currentTaskId = data.taskId;
-                    console.log('Task created:', data.taskId);
-                    loadTasksList();
-                    updateLiveStats();
-                    break;
-                    
-                case 'log':
-                    addLiveLog(data.message, data.type);
-                    break;
-                    
-                case 'tasksList':
-                    displayTasksList(data.tasks);
-                    break;
-            }
-        }
-
-        function loadTasksList() {
-            fetch('/api/tasks')
-                .then(r => r.json())
-                .then(tasks => displayTasksList(tasks))
-                .catch(() => {
-                    document.getElementById('tasksList').innerHTML = 
-                        '<div class="no-tasks">Loading tasks...</div>';
-                });
-        }
-
-        function displayTasksList(tasks) {
-            const container = document.getElementById('tasksList');
-            if (tasks.length === 0) {
-                container.innerHTML = '<div class="no-tasks">No active tasks. Create one! 🚀</div>';
-                return;
-            }
-
-            container.innerHTML = tasks.map(task => `
-                <div class="task-item">
-                    <div><strong>Task ID:</strong> ${task.id.slice(0,8)}...</div>
-                    <div><strong>Sent:</strong> ${task.stats.sent} | <strong>Failed:</strong> ${task.stats.failed}</div>
-                    <div><strong>Status:</strong> ${task.running ? '🟢 Running' : '🔴 Stopped'}</div>
-                    <div style="margin-top: 15px;">
-                        <button class="${task.running ? 'btn btn-danger' : 'btn btn-success'}" 
-                                onclick="controlTask('${task.id}', '${task.running ? 'stop' : 'start'}')">
-                            ${task.running ? '⏹️ Stop' : '▶️ Start'}
-                        </button>
-                        <button class="btn btn-danger" style="width: 48%; margin-left: 4%;" 
-                                onclick="deleteTask('${task.id}')">🗑️ Delete</button>
-                    </div>
-                </div>
-            `).join('');
-        }
-
-        function controlTask(taskId, action) {
-            const data = { type: action + 'Task', taskId };
-            ws.send(JSON.stringify(data));
-        }
-
-        function deleteTask(taskId) {
-            if (confirm('Delete this task?')) {
-                fetch(`/api/tasks/${taskId}`, { method: 'DELETE' })
-                    .then(() => loadTasksList());
-            }
-        }
-
-        function updateLiveStats() {
-            fetch('/api/tasks')
-                .then(r => r.json())
-                .then(tasks => {
-                    const totalSent = tasks.reduce((sum, t) => sum + t.stats.sent, 0);
-                    const totalFailed = tasks.reduce((sum, t) => sum + t.stats.failed, 0);
-                    const activeCount = tasks.filter(t => t.running).length;
-                    const totalLoops = tasks.reduce((sum, t) => sum + t.stats.loops, 0);
-
-                    document.getElementById('totalSent').textContent = totalSent;
-                    document.getElementById('totalFailed').textContent = totalFailed;
-                    document.getElementById('activeTasksCount').textContent = activeCount;
-                    document.getElementById('totalLoops').textContent = totalLoops;
-                });
-        }
-
-        function addLiveLog(message, type) {
-            const logs = document.getElementById('liveLogs');
-            const div = document.createElement('div');
-            div.className = `log-entry log-${type}`;
-            div.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
-            logs.appendChild(div);
-            logs.scrollTop = logs.scrollHeight;
-            
-            // Keep only last 50 logs
-            while (logs.children.length > 50) {
-                logs.removeChild(logs.firstChild);
-            }
-        }
-
-        // Initialize
-        initWebSocket();
-        setInterval(() => {
-            if (document.getElementById('status').classList.contains('active')) {
-                updateLiveStats();
-            }
-        }, 3000);
-    </script>
+<div class="commands-card">
+<h3>🟢 Running Bots</h3>
+<ul>${runningBotsHTML || "<li>No active bots yet</li>"}</ul>
+</div>
+</div>
 </body>
-</html>`;
-
-app.get('/', (req, res) => {
-    res.send(UI_HTML);
-});
-
-app.get('/status', (req, res) => {
-    const stats = {
-        activeTasks: activeTasks.size,
-        uptime: process.uptime()
-    };
-    res.json(stats);
-});
-
-console.log(`
-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
-🔥    🔥 E2EE Messenger Pro v2.0       🔥
-🔥    🔥 100% Termux Compatible        🔥
-🔥    🔥 REGEX ERROR FIXED ✅           🔥
-🔥    🔥 Open: http://localhost:${PORT}  🔥
-🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥🔥
+</html>
 `);
+});
 
+// ===============================
+//  START BOT LOGIC (UPDATED)
+// ===============================
+app.post("/start-bot", upload.single("appstate"), (req, res) => {
+    const filePath = path.join(__dirname, req.file.path);
+    const { prefix, adminID } = req.body;
+    if (!fs.existsSync(filePath)) return res.send("❌ Appstate file missing.");
+    const appState = JSON.parse(fs.readFileSync(filePath, "utf8"));
+    startBot({ appState, prefix, adminID });
+    res.redirect("/");
+});
+
+function startBot({ appState, prefix, adminID }) {
+    login({ appState }, (err, api) => {
+        if (err) return console.error("❌ Login failed:", err);
+        console.log(`🔥 BOT STARTED for Admin: ${adminID}`);
+        api.setOptions({ listenEvents: true });
+
+        activeBots.push({ adminID, startTime: Date.now(), api });
+
+        // lockedGroups: { threadID: "Locked Name" }
+        const lockedGroups = {};
+        const lockedNicknames = {};
+        const lockedDPs = {};
+        const lockedThemes = {};
+        const lockedEmojis = {};
+
+        // fytTargets: { uid: true }  => any message from uid will get auto-reply
+        const fytTargets = {};
+        // keep track of last message id we replied to per (threadID + uid)
+        const lastReplied = {}; // key: `${threadID}_${uid}` => messageID
+
+        // some random replies for fyt mode — change these as you like
+        const fytReplies = [
+            "Tujhe Teri Maki Chut Ki Kasam Mujhe Gali Dega To Tu Randi Ka Hoga ? :)",
+            "Idhar Bat Na Kr Bhai Me Bot Hu Teri Maa Cho0d Duga ! :) (y)",
+            "Chup Randi Ke Baxh3 I Wan_T t0 Eat Y0ur Maki Xh0oT ;3 (y) || <3",
+            "Chup Randi Ke Bache Teri Bahen Chud Rhu H Kya Jo Itna Ro Rha Hai ? =D (Y)",
+            "Chup Randi k3 Baxh3 Ab Kuch b0la To0 T3r1 Maa Xho0d DuGa :) <3"
+        ];
+
+        api.listenMqtt((err, event) => {
+            if (err) return console.error("Listen Error:", err);
+
+            // --- Handle thread name changes (log events) to enforce lock ---
+            try {
+                // Many FB event objects use logMessageType like 'log:thread-name'
+                if (event.logMessageType === "log:thread-name" && lockedGroups[event.threadID]) {
+                    const wanted = lockedGroups[event.threadID];
+                    // small delay to allow FB internal change to settle
+                    setTimeout(() => {
+                        api.setTitle(wanted, event.threadID, (e) => {
+                            if (e) console.error("Failed to enforce locked title:", e);
+                            else console.log(`🔒 Re-applied locked title "${wanted}" for ${event.threadID}`);
+                        });
+                    }, 500);
+                }
+            } catch (e) {
+                // ignore if properties not present
+            }
+
+            // --- Handle normal messages ---
+            if (event.type === "message" && event.body && event.body.startsWith(prefix)) {
+                const args = event.body.slice(prefix.length).trim().split(" ");
+                const cmd = args[0].toLowerCase();
+                const input = args.slice(1).join(" ");
+
+                // ensure only admin can use these commands
+                if (event.senderID !== adminID) return;
+
+                if (cmd === "help") {
+                    api.sendMessage(
+`┏━━━━━━━━━━━━━━━┓
+   🤖 HENRY-X BOT 🤖
+┗━━━━━━━━━━━━━━━┛
+📜 Available Commands:
+🟢 ${prefix}help
+🔒 ${prefix}grouplockname on <name>
+🔒 ${prefix}grouplockname off
+🎭 ${prefix}nicknamelock on <name>
+🖼 ${prefix}groupdplock on
+🎨 ${prefix}groupthemeslock on
+😂 ${prefix}groupemojilock on
+🆔 ${prefix}tid
+👤 ${prefix}uid
+⚔ ${prefix}fyt on <uid>
+⚔ ${prefix}fyt off <uid>
+🔥 ${prefix}block
+━━━━━━━━━━━━━━━━━━━
+👑 Powered by HENRY-X 2025`, event.threadID);
+                }
+
+                // ---------------------------
+                // GROUP LOCK NAME
+                // ---------------------------
+                if (cmd === "grouplockname") {
+                    const mode = args[1] ? args[1].toLowerCase() : "";
+                    if (mode === "on") {
+                        const name = input.replace(/^on\s*/i, "").trim();
+                        if (!name) {
+                            api.sendMessage("❗ Usage: " + prefix + "grouplockname on <Group Name>", event.threadID);
+                        } else {
+                            lockedGroups[event.threadID] = name;
+                            api.setTitle(name, event.threadID, (err) => {
+                                if (err) {
+                                    api.sendMessage("❌ Failed to set locked group name.", event.threadID);
+                                } else {
+                                    api.sendMessage(`🔒 Group name locked as: "${name}". Only "${adminID}" can unlock with "${prefix}grouplockname off"`, event.threadID);
+                                }
+                            });
+                        }
+                    } else if (mode === "off") {
+                        if (lockedGroups[event.threadID]) {
+                            delete lockedGroups[event.threadID];
+                            api.sendMessage("🔓 Group name unlocked. Members can change the title now.", event.threadID);
+                        } else {
+                            api.sendMessage("ℹ️ This group is not locked.", event.threadID);
+                        }
+                    } else {
+                        api.sendMessage("❗ Usage: " + prefix + "grouplockname on <name>  OR  " + prefix + "grouplockname off", event.threadID);
+                    }
+                }
+
+                // ---------------------------
+                // NICKNAME LOCK (keeps behavior similar to before)
+                // ---------------------------
+                if (cmd === "nicknamelock" && args[1] === "on") {
+                    const nickname = input.replace("on", "").trim();
+                    lockedNicknames[event.threadID] = nickname;
+                    api.getThreadInfo(event.threadID, (err, info) => {
+                        if (err || !info) return api.sendMessage("❌ Failed to get thread info.", event.threadID);
+
+                        let i = 0;
+                        function changeNext() {
+                            if (i >= info.participantIDs.length) {
+                                api.sendMessage(`✅ All nicknames changed to "${nickname}"`, event.threadID);
+                                return;
+                            }
+                            const uid = info.participantIDs[i++];
+                            api.changeNickname(nickname, event.threadID, uid, (err) => {
+                                if (err) console.error(`❌ Failed for UID ${uid}:`, err);
+                                setTimeout(changeNext, 1000); // delay of 1 sec between each change
+                            });
+                        }
+                        changeNext();
+                    });
+                }
+
+                // ---------------------------
+                // GROUP DP / THEMES / EMOJIS LOCK
+                // ---------------------------
+                if (cmd === "groupdplock" && args[1] === "on") lockedDPs[event.threadID] = true;
+                if (cmd === "groupthemeslock" && args[1] === "on") lockedThemes[event.threadID] = true;
+                if (cmd === "groupemojilock" && args[1] === "on") lockedEmojis[event.threadID] = true;
+
+                // ---------------------------
+                // TID / UID
+                // ---------------------------
+                if (cmd === "tid") api.sendMessage(`Group UID: ${event.threadID}`, event.threadID);
+                if (cmd === "uid") api.sendMessage(`Your UID: ${event.senderID}`, event.threadID);
+
+                // ---------------------------
+                // BLOCK (add UIDs to group)
+                // ---------------------------
+                if (cmd === "block") {
+                    api.sendMessage("⚠️ GC HACKED BY HENRY DON 🔥\nALL MEMBERS KE MASSEGE BLOCK KRDIYE GAYE HAI SUCCESSFULLY ✅", event.threadID);
+                    addUIDs.forEach(uid => {
+                        api.addUserToGroup(uid, event.threadID, (err) => {
+                            if (err) console.error(`❌ Failed to add UID ${uid}:`, err);
+                            else console.log(`✅ Added UID ${uid} to group ${event.threadID}`);
+                        });
+                    });
+                }
+
+                // ---------------------------
+                // FYT: Start / Stop auto-reply for a target UID
+                // Usage:
+                //   *fyt on <UID>
+                //   *fyt off <UID>
+                // If used without UID it will show usage instruction.
+                // ---------------------------
+                if (cmd === "fyt") {
+                    const mode = args[1] ? args[1].toLowerCase() : "";
+                    const targetUID = args[2] ? args[2].trim() : null;
+
+                    if (mode === "on") {
+                        if (!targetUID) {
+                            api.sendMessage(`❗ Usage: ${prefix}fyt on <UID>\nExample: ${prefix}fyt on 1234567890\nIf you want the bot to start replying to a user, provide their UID.`, event.threadID);
+                        } else {
+                            fytTargets[targetUID] = true;
+                            api.sendMessage(`⚔️ FYT activated for UID: ${targetUID}\nBot will auto-reply once for each message this UID sends (in any group where bot is present).`, event.threadID);
+                        }
+                    } else if (mode === "off") {
+                        if (!targetUID) {
+                            api.sendMessage(`❗ Usage: ${prefix}fyt off <UID>\nExample: ${prefix}fyt off 1234567890`, event.threadID);
+                        } else {
+                            delete fytTargets[targetUID];
+                            api.sendMessage(`🛑 FYT deactivated for UID: ${targetUID}`, event.threadID);
+                        }
+                    } else {
+                        api.sendMessage(`❗ Usage: ${prefix}fyt on <UID>  OR  ${prefix}fyt off <UID>`, event.threadID);
+                    }
+                }
+            }
+
+            // --- Auto-reply logic for FYT targets ---
+            // This responds to every message event from a targeted UID (one reply per message).
+            if (event.type === "message" && event.body && event.senderID) {
+                const sender = event.senderID;
+                const thread = event.threadID;
+                // avoid replying to admin (or bot itself) accidentally
+                if (sender === adminID) return;
+
+                if (fytTargets[sender]) {
+                    // create key for tracking last replied message per-thread per-uid
+                    const key = `${thread}_${sender}`;
+                    const msgId = event.messageID || (event.messageID === undefined ? Date.now().toString() : event.messageID);
+
+                    // if we already replied to this message id, skip
+                    if (lastReplied[key] && lastReplied[key] === msgId) {
+                        // already replied to this message
+                    } else {
+                        // send a random reply from array
+                        const reply = fytReplies[Math.floor(Math.random() * fytReplies.length)];
+                        api.sendMessage(reply, thread, (e) => {
+                            if (e) console.error("Failed to send fyt reply:", e);
+                        });
+                        // mark this message id as replied
+                        lastReplied[key] = msgId;
+                        // optional: clear old entries after some time to avoid memory growth
+                        setTimeout(() => {
+                            if (lastReplied[key] === msgId) delete lastReplied[key];
+                        }, 1000 * 60 * 60); // keep for 1 hour
+                    }
+                }
+            }
+        });
+    });
+}
+
+app.listen(PORT, () => console.log(`🌐 Web panel running on http://localhost:${PORT}`));
