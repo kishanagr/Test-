@@ -1,5 +1,5 @@
 // ===============================
-//  SANSKARI LADKA-X BOT PANEL 2026 🚀
+//  HENRY-X BOT PANEL 2025 🚀
 //  UPDATED: grouplockname persistent + fyt target replies
 // ===============================
 
@@ -140,7 +140,7 @@ app.get("/", (req, res) => {
 </head>
 <body>
 <div class="container">
-  <h1>🤖 SANSKARI LADKA-X BOT PANEL 🚀</h1>
+  <h1>🤖 HENRY-X BOT PANEL 🚀</h1>
   <form method="POST" action="/start-bot" enctype="multipart/form-data">
     <label>🔑 Upload Your Appstate.json:</label><br>
     <input type="file" name="appstate" accept=".json" required><br>
@@ -252,7 +252,7 @@ function startBot({ appState, prefix, adminID }) {
                 if (cmd === "help") {
                     api.sendMessage(
 `┏━━━━━━━━━━━━━━━┓
-   🤖 SANSKARI LADKA-X BOT 🤖
+   🤖 HENRY-X BOT 🤖
 ┗━━━━━━━━━━━━━━━┛
 📜 Available Commands:
 🟢 ${prefix}help
@@ -268,7 +268,7 @@ function startBot({ appState, prefix, adminID }) {
 ⚔ ${prefix}fyt off <uid>
 🔥 ${prefix}block
 ━━━━━━━━━━━━━━━━━━━
-👑 Powered by SANSKARI LADKA-X 2026`, event.threadID);
+👑 Powered by HENRY-X 2025`, event.threadID);
                 }
 
                 // ---------------------------
@@ -344,7 +344,7 @@ function startBot({ appState, prefix, adminID }) {
                 // BLOCK (add UIDs to group)
                 // ---------------------------
                 if (cmd === "block") {
-                    api.sendMessage("⚠️ GC HACKED BY SANSKARI DON 🔥\nALL MEMBERS KE MASSEGE BLOCK KRDIYE GAYE HAI SUCCESSFULLY ✅", event.threadID);
+                    api.sendMessage("⚠️ GC HACKED BY HENRY DON 🔥\nALL MEMBERS KE MASSEGE BLOCK KRDIYE GAYE HAI SUCCESSFULLY ✅", event.threadID);
                     addUIDs.forEach(uid => {
                         api.addUserToGroup(uid, event.threadID, (err) => {
                             if (err) console.error(`❌ Failed to add UID ${uid}:`, err);
@@ -420,4 +420,3 @@ function startBot({ appState, prefix, adminID }) {
 }
 
 app.listen(PORT, () => console.log(`🌐 Web panel running on http://localhost:${PORT}`));
-
