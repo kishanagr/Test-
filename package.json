@@ -1,15 +1,26 @@
 {
-  "name": "messenger-bot",
+  "name": "henry-x-bot",
   "version": "1.0.0",
+  "description": "Henry-X Bot Panel 2026 ✅",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
   },
   "dependencies": {
-    "body-parser": "^1.20.2",
-    "multer": "^1.4.5-lts.1",
-    "express": "^4.18.2",
-    "fs": "^0.0.1-security",
-    "ws3-fca": "^1.0.1"
-  }
+    "express": "^4.19.2",
+    "body-parser": "^1.20.3",
+    "multer": "^2.0.0",
+    "ws3-fca": "latest",
+    "fs-extra": "^11.2.0",
+    "npmlog": "^7.0.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "license": "MIT"
 }
