@@ -1,26 +1,13 @@
 {
-  "name": "henry-x-bot",
+  "name": "monster-bot-panel",
   "version": "1.0.0",
-  "description": "Henry-X Bot Panel 2026 ✅",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js",
-    "dev": "nodemon index.js"
-  },
-  "engines": {
-    "node": ">=22.0.0",
-    "npm": ">=10.0.0"
+    "start": "node index.js"
   },
   "dependencies": {
     "express": "^4.19.2",
-    "body-parser": "^1.20.3",
-    "multer": "^2.0.0",
-    "ws3-fca": "latest",
-    "fs-extra": "^11.2.0",
-    "npmlog": "^7.0.1"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.4"
-  },
-  "license": "MIT"
+    "multer": "^1.4.5-lts.1",
+    "ws3-fca": "^2.0.1"
+  }
 }
